@@ -8,6 +8,7 @@ lang_spec_t langs[] = {
     { "actionscript", { "as", "mxml" } },
     { "ada", { "ada", "adb", "ads" } },
     { "asm", { "asm", "s" } },
+    { "autotools", { "ac", "am", "in", "m4", "pc" } },
     { "batch", { "bat", "cmd" } },
     { "bitbake", { "bb", "bbappend", "bbclass", "inc" } },
     { "bro", { "bro", "bif" } },
