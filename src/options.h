@@ -26,6 +26,16 @@ enum path_print_behavior {
     PATH_PRINT_NOTHING
 };
 
+enum color_behaviour {
+    COLOR_FALSE = 0,
+    COLOR_TRUE = 1,
+    COLOR_DEFAULT_FALSE,
+    COLOR_DEFAULT_TRUE,
+    COLOR_EXPLICIT_FALSE,
+    COLOR_EXPLICIT_TRUE,
+    COLOR_EMULATION_FALSE,
+};
+
 typedef struct {
     int ackmate;
     pcre *ackmate_dir_filter;

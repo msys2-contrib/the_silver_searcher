@@ -140,8 +140,16 @@ void print_version(void) {
 void init_options(void) {
     memset(&opts, 0, sizeof(opts));
     opts.casing = CASE_DEFAULT;
-    opts.color = TRUE;
-    opts.color_win_ansi = FALSE;
+    opts.color = COLOR_DEFAULT_TRUE;
+#ifdef _WIN32
+    const char* env_MSYSCON = getenv("MSYSCON");
+    opts.color_win_ansi =  ((getenv("ANSICON") || getenv("CMDER_ROOT")
+                          || (env_MSYSCON && !strcmp(env_MSYSCON, "mintty.exe"))))
+                           ? COLOR_DEFAULT_TRUE : COLOR_DEFAULT_FALSE;
+#else
+    opts.color_win_ansi = COLOR_DEFAULT_FALSE;
+#endif
+
     opts.max_matches_per_file = 0;
     opts.max_search_depth = DEFAULT_MAX_SEARCH_DEPTH;
     opts.mmap = TRUE;
@@ -228,11 +236,11 @@ void parse_options(int argc, char **argv, char **base_paths[], char **paths[]) {
         { "before", optional_argument, NULL, 'B' },
         { "break", no_argument, &opts.print_break, 1 },
         { "case-sensitive", no_argument, NULL, 's' },
-        { "color", no_argument, &opts.color, 1 },
+        { "color", no_argument, &opts.color, COLOR_EXPLICIT_TRUE },
         { "color-line-number", required_argument, NULL, 0 },
         { "color-match", required_argument, NULL, 0 },
         { "color-path", required_argument, NULL, 0 },
-        { "color-win-ansi", no_argument, &opts.color_win_ansi, TRUE },
+        { "color-win-ansi", no_argument, &opts.color_win_ansi, COLOR_EXPLICIT_TRUE },
         { "column", no_argument, &opts.column, 1 },
         { "context", optional_argument, NULL, 'C' },
         { "count", no_argument, NULL, 'c' },
@@ -265,8 +273,8 @@ void parse_options(int argc, char **argv, char **base_paths[], char **paths[]) {
         { "noaffinity", no_argument, &opts.use_thread_affinity, 0 },
         { "no-break", no_argument, &opts.print_break, 0 },
         { "nobreak", no_argument, &opts.print_break, 0 },
-        { "no-color", no_argument, &opts.color, 0 },
-        { "nocolor", no_argument, &opts.color, 0 },
+        { "no-color", no_argument, &opts.color, COLOR_EXPLICIT_FALSE },
+        { "nocolor", no_argument, &opts.color, COLOR_EXPLICIT_FALSE },
         { "no-filename", no_argument, NULL, 0 },
         { "nofilename", no_argument, NULL, 0 },
         { "no-follow", no_argument, &opts.follow_symlinks, 0 },
@@ -339,22 +347,6 @@ void parse_options(int argc, char **argv, char **base_paths[], char **paths[]) {
         if (S_ISFIFO(statbuf.st_mode) || S_ISREG(statbuf.st_mode)) {
             opts.search_stream = 1;
         }
-    }
-
-    /* If we're not outputting to a terminal. change output to:
-        * turn off colors
-        * print filenames on every line
-     */
-    if (!isatty(fileno(stdout))) {
-        opts.color = 0;
-        group = 0;
-
-        /* Don't search the file that stdout is redirected to */
-        rv = fstat(fileno(stdout), &statbuf);
-        if (rv != 0) {
-            die("Error fstat()ing stdout");
-        }
-        opts.stdout_inode = statbuf.st_ino;
     }
 
     char *file_search_regex = NULL;
@@ -707,42 +699,6 @@ void parse_options(int argc, char **argv, char **base_paths[], char **paths[]) {
         opts.after = opts.context;
     }
 
-    if (opts.ackmate) {
-        opts.color = 0;
-        opts.print_break = 1;
-        group = 1;
-        opts.search_stream = 0;
-    }
-
-    if (opts.vimgrep) {
-        opts.color = 0;
-        opts.print_break = 0;
-        group = 1;
-        opts.search_stream = 0;
-        opts.print_path = PATH_PRINT_NOTHING;
-    }
-
-    if (opts.parallel) {
-        opts.search_stream = 0;
-    }
-
-    if (!(opts.print_path != PATH_PRINT_DEFAULT || opts.print_break == 0)) {
-        if (group) {
-            opts.print_break = 1;
-        } else {
-            opts.print_path = PATH_PRINT_DEFAULT_EACH_LINE;
-            opts.print_break = 0;
-        }
-    }
-
-    if (opts.search_stream) {
-        opts.print_break = 0;
-        opts.print_path = PATH_PRINT_NOTHING;
-        if (opts.print_line_numbers != 2) {
-            opts.print_line_numbers = 0;
-        }
-    }
-
     if (accepts_query && argc > 0) {
         // use the provided query
         opts.query = ag_strdup(argv[0]);
@@ -805,6 +761,84 @@ void parse_options(int argc, char **argv, char **base_paths[], char **paths[]) {
     }
     (*paths)[i] = NULL;
     (*base_paths)[i] = NULL;
+
+    /* If we're not outputting to a terminal. change output to:
+        * turn off colors
+        * print filenames on every line
+     */
+    if (!isatty(fileno(stdout))) {
+        /* Don't search the file that stdout is redirected to */
+        rv = fstat(fileno(stdout), &statbuf);
+        if (rv != 0) {
+            die("Error fstat()ing stdout");
+        }
+        opts.stdout_inode = statbuf.st_ino;
+        /* Assume the user knows best */
+        if (opts.color != COLOR_EXPLICIT_TRUE) {
+         /* On Windows redirection to regular file *can* br detected via
+            statbuf.st_mode & S_IFREG (while statbuf.st_ino is always 0) */
+            if (statbuf.st_ino != 0
+             || statbuf.st_mode & S_IFREG
+#if !defined(_WIN32)
+                /* On Windows bash.exe pipes cannot be distinguished from cmd.exe
+                   pipes or mintty.exe console output (statbuf.st_mode & S_IFIFO)
+                   so its best not to disable color output here. */
+             || statbuf.st_mode & S_IFIFO
+#endif
+            ) {
+                opts.color = COLOR_DEFAULT_FALSE;
+                group = 0;
+            }
+        }
+    }
+
+    if (opts.ackmate) {
+        opts.color = COLOR_EMULATION_FALSE;
+        opts.print_break = 1;
+        group = 1;
+        opts.search_stream = 0;
+    }
+
+    if (opts.vimgrep) {
+        opts.color = COLOR_EMULATION_FALSE;
+        opts.print_break = 0;
+        group = 1;
+        opts.search_stream = 0;
+        opts.print_path = PATH_PRINT_NOTHING;
+    }
+
+    if (opts.parallel) {
+        opts.search_stream = 0;
+    }
+
+    if (!(opts.print_path != PATH_PRINT_DEFAULT || opts.print_break == 0)) {
+        if (group) {
+            opts.print_break = 1;
+        } else {
+            opts.print_path = PATH_PRINT_DEFAULT_EACH_LINE;
+            opts.print_break = 0;
+        }
+    }
+
+    if (opts.search_stream) {
+        opts.print_break = 0;
+        opts.print_path = PATH_PRINT_NOTHING;
+        if (opts.print_line_numbers != 2) {
+            opts.print_line_numbers = 0;
+        }
+    }
+
+    if (opts.color == COLOR_DEFAULT_FALSE || opts.color == COLOR_EXPLICIT_FALSE ||
+        opts.color == COLOR_EMULATION_FALSE) {
+        opts.color = COLOR_FALSE;
+    } else {
+        opts.color = COLOR_TRUE;
+    }
+    if (opts.color_win_ansi == COLOR_DEFAULT_FALSE) {
+        opts.color_win_ansi = COLOR_FALSE;
+    } else {
+        opts.color_win_ansi = COLOR_TRUE;
+    }
 
 #ifdef _WIN32
     windows_use_ansi(opts.color_win_ansi);
