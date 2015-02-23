@@ -51,6 +51,7 @@ lang_spec_t langs[] = {
     { "lua", { "lua" } },
     { "m4", { "m4" } },
     { "make", { "^Makefile", "^Makefile.Debug", "^Makefile.Release", "Makefiles", "mk", "mak", "make" } },
+    { "makepkg", { "^PKGBUILD", "diff", "patch", "in", "install" } },
     { "mako", { "mako" } },
     { "markdown", { "markdown", "mdown", "mdwn", "mkdn", "mkd", "md" } },
     { "mason", { "mas", "mhtml", "mpl", "mtxt" } },
